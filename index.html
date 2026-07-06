@@ -2070,8 +2070,9 @@ async function cloudLoadAll(){
   });
 
   // history（配列のまま1キーに格納）
-  const hist = {};
-  (data.history||[]).forEach(function(row){ if(row.id) hist[row.id] = row; });
+  // 【重要】本文コードは salary_raise_history を配列として扱う（.filter/.reverse等）。
+  // オブジェクト{}で載せると hist.filter is not a function で落ちるため、必ず配列にする。
+  const hist = (data.history || []).filter(function(row){ return row && row.id; });
   __cache['salary_raise_history'] = JSON.stringify(hist);
 
   // 【残骸一掃】クラウド化前に生localStorageへ残った旧データを完全削除する。
