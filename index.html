@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-06-C</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-06-D</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -3318,6 +3318,46 @@ function renderPendingCardNext(id, d) {
 }
 
 // ===== 次期目標予告セクション =====
+// 変更履歴ヘルパー：カタログ原本(orig*)と現在値の差分を検出して表示用HTMLを返す。
+// custom(自由記述)目標は原本が無いため差分対象外。
+function questChangeSummary(q) {
+  if (!q || q.custom) return '';
+  var changes = [];
+  // 難易度：catalogLevel（選択時の原本）と現在levelを比較
+  if (q.catalogLevel !== undefined && q.catalogLevel !== null && q.catalogLevel !== q.level) {
+    changes.push('難易度 <span style="color:#9aa0a6;">' + q.catalogLevel + '</span> → <strong style="color:#b45309;">' + q.level + '</strong>');
+  }
+  function esc(s){ return (s||'').replace(/</g,'&lt;'); }
+  // タイトル
+  if (q.origTitle !== undefined && q.origTitle !== q.title) {
+    changes.push('状態目標を変更');
+  }
+  // 結果目標・行動目標の文言差分（件数変化・内容変化を検出）
+  function diffList(orig, cur, label) {
+    if (!orig) return;
+    var o = orig || [], c = cur || [];
+    var diffs = [];
+    var maxLen = Math.max(o.length, c.length);
+    for (var i = 0; i < maxLen; i++) {
+      var ov = (o[i] || '').trim(), cv = (c[i] || '').trim();
+      if (ov === cv) continue;
+      if (ov && cv) diffs.push('&nbsp;&nbsp;' + label + (i+1) + '：<span style="color:#9aa0a6;text-decoration:line-through;">' + esc(ov) + '</span> → <strong style="color:#b45309;">' + esc(cv) + '</strong>');
+      else if (!ov && cv) diffs.push('&nbsp;&nbsp;' + label + (i+1) + '：<strong style="color:#15803d;">＋' + esc(cv) + '</strong>（追加）');
+      else if (ov && !cv) diffs.push('&nbsp;&nbsp;' + label + (i+1) + '：<span style="color:#9aa0a6;text-decoration:line-through;">' + esc(ov) + '</span>（削除）');
+    }
+    if (diffs.length) changes.push(label + 'を変更<br>' + diffs.join('<br>'));
+  }
+  diffList(q.origResults, q.results, '結果目標');
+  diffList(q.origActions, q.actions, '行動目標');
+  if (!changes.length) return '';
+  return '<div style="margin-top:8px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:11px;color:#92400e;line-height:1.7;">'
+    + '<span style="font-weight:800;">✏️ カタログから変更あり</span><br>' + changes.join('<br>') + '</div>';
+}
+// 自由記述目標バッジ
+function customGoalBadge(q) {
+  if (!q || !q.custom) return '';
+  return '<span style="font-size:10px;font-weight:800;color:#92400e;background:#fef3c7;padding:2px 8px;border-radius:10px;margin-left:2px;">✏️ 自由記述</span>';
+}
 function renderNextGoalsSection(id, d) {
   const nextIds = d.nextSelectedGoalIds || [];
   const nextQuests = d.nextQuests || {};
@@ -3370,11 +3410,12 @@ function renderNextGoalsSection(id, d) {
         <span style="font-size:10px;font-weight:800;color:#8b5cf6;background:rgba(139,92,246,0.1);padding:2px 8px;border-radius:10px;">次期目標 ${idx+1}</span>
         ${levelAdjustHtml(id, gid, q, 'next', lvEditable)}${tagHtml}${extraHtml}
       </div>
-      <div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--navy);">${(q.title||'').replace(/</g,'&lt;')}</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--navy);">${(q.title||'').replace(/</g,'&lt;')}${customGoalBadge(q)}</div>
       <div style="font-size:10px;color:var(--gray-500);font-weight:700;margin-bottom:2px;">🎯 結果目標</div>
       ${rRows}
       <div style="font-size:10px;color:var(--gray-500);font-weight:700;margin:6px 0 2px;">📋 行動目標</div>
       ${aRows}
+      ${questChangeSummary(q)}
     </div>`;
   }).join('');
   return `<div style="margin-top:20px;padding:16px;background:linear-gradient(135deg,#faf5ff,#f3e8ff);border-radius:12px;border:1.5px solid #c4b5fd;">
@@ -5305,7 +5346,13 @@ function toggleGoalSelect(goalId) {
       results: g.results.slice(), actions: g.actions.slice(),
       resultChecks: g.results.map(function(){return false;}),
       actionChecks: g.actions.map(function(){return false;}),
-      selfComment: ''
+      selfComment: '',
+      // 変更履歴用：カタログ原本のスナップショット。編集後の値と差分表示するために保持する。
+      // 難易度は既存の origLevel（難易度調整機能）とは別に、選択時点の原本を catalogLevel に残す。
+      catalogLevel: g.level,
+      origTitle: g.title,
+      origResults: g.results.slice(),
+      origActions: g.actions.slice()
     };
   }
   setEditIds(ids);
