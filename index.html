@@ -1477,8 +1477,8 @@ tr.expanded td{background:var(--light-blue) !important;}
   <div id="not-eval-target-banner" style="display:none;background:#f8f9fa;border-radius:var(--radius);padding:20px 24px;margin-bottom:24px;align-items:center;gap:16px;border-left:4px solid var(--gray-300);">
     <div style="font-size:28px;">📋</div>
     <div>
-      <div style="font-size:15px;font-weight:700;color:var(--gray-700);margin-bottom:4px;">今期の昇給審査対象外です</div>
-      <div style="font-size:13px;color:var(--gray-500);">今期はご自身の昇給審査対象期間ではありません。詳細は上長にお問い合わせください。</div>
+      <div style="font-size:15px;font-weight:700;color:var(--gray-700);margin-bottom:4px;">今期の昇給審査対象外です（目標設定は入力できます）</div>
+      <div style="font-size:13px;color:var(--gray-500);">今期はご自身の昇給審査対象期間ではありませんが、目標設定はご入力いただけます。360度評価と昇給審査は次回対象期間からとなります。詳細は上長にお問い合わせください。</div>
     </div>
   </div>
 
@@ -3821,7 +3821,7 @@ function renderStaffTable(all) {
       + '<td style="font-size:12px;color:var(--gray-700);">' + formatHireDate(d.hireDate) + '</td>'
       + '<td style="font-size:12px;font-weight:700;color:var(--teal);">' + calcTenure(d.hireDate) + '</td>'
       + '<td style="font-size:12px;font-weight:700;color:' + (raiseYear ? 'var(--teal)' : 'var(--gray-500)') + ';">' + periodDisplay + '</td>'
-      + '<td onclick="event.stopPropagation();">' + '<button onclick="toggleStaffFlag(this.dataset.sid, \'yakushi\')" data-sid="' + id + '" style="width:36px;height:22px;border-radius:11px;border:none;cursor:pointer;font-size:9px;font-weight:700;transition:all 0.2s;' + (d.isYakushi ? 'background:linear-gradient(90deg,#1ab5b0,#5dc85a);color:white;">ON' : 'background:#dee2e6;color:#6c757d;">OFF') + '</button>' + '</td>'
+      + '<td onclick="event.stopPropagation();">' + '<button onclick="toggleStaffFlag(this.dataset.sid, \'yakushi\')" data-sid="' + id + '" style="width:36px;height:22px;border-radius:11px;border:none;cursor:pointer;font-size:9px;font-weight:700;transition:all 0.2s;' + ((d.jobType === 'yakushi' || (d.jobType == null || d.jobType === '') && d.isYakushi) ? 'background:linear-gradient(90deg,#1ab5b0,#5dc85a);color:white;">ON' : 'background:#dee2e6;color:#6c757d;">OFF') + '</button>' + '</td>'
       + '<td>' + (LV_LABELS[parseInt(d.level)] || '—') + '</td>'
             + '<td onclick="event.stopPropagation();">'
         + '<button onclick="toggleEvalFlag(this.dataset.sid)" data-sid="' + id + '" style="width:48px;height:26px;border-radius:13px;border:none;cursor:pointer;font-size:10px;font-weight:700;transition:all 0.2s;'
@@ -7762,10 +7762,17 @@ function updateEvalTargetBanner() {
   if (banner) banner.style.display = isTarget ? 'none' : 'flex';
   document.querySelectorAll('#staff-app .nav-item').forEach(function(el) {
     var t = el.textContent || '';
-    if (t.indexOf('行動目標') >= 0 || t.indexOf('360度評価') >= 0) {
+    // 目標設定（行動目標）は審査対象外でも入力可とする（入職直後でも目標設定させるため）
+    // 360度評価のみ、今期の被評価対象でない場合は無効化する
+    if (t.indexOf('360度評価') >= 0) {
       el.style.opacity       = isTarget ? '' : '0.35';
       el.style.pointerEvents = isTarget ? '' : 'none';
       el.title               = isTarget ? '' : '今期は審査対象外です';
+    } else if (t.indexOf('行動目標') >= 0) {
+      // 明示的に有効化（過去に無効化された状態が残らないようリセット）
+      el.style.opacity       = '';
+      el.style.pointerEvents = '';
+      el.title               = '';
     }
   });
 }
@@ -7923,11 +7930,25 @@ function initLevelDefaults() {
       all[sid].level = '0';
       updated = true;
     }
-    // 薬剤師フラグに基づいてjobTypeを自動設定
-    var autoJt = all[sid].isYakushi ? 'yakushi' : 'jimu';
-    if (all[sid].jobType !== autoJt) {
-      all[sid].jobType = autoJt;
-      updated = true;
+    // jobType を真の情報源とし、isYakushi（表示用フラグ）を追従させる。
+    // CSV取り込みは jobType のみ設定するため、jobType→isYakushi の一方向で同期する。
+    // jobType が未設定（空）の旧データのみ、既存の isYakushi から補完する。
+    var jt = all[sid].jobType;
+    if (jt === 'yakushi' || jt === 'jimu') {
+      var wantYakushi = (jt === 'yakushi');
+      if (all[sid].isYakushi !== wantYakushi) {
+        all[sid].isYakushi = wantYakushi;
+        updated = true;
+      }
+    } else if (jt === undefined || jt === null || jt === '') {
+      // jobType 未設定：isYakushi があればそれを基に補完。両方無ければ何もしない（手動振り分け待ち）
+      if (all[sid].isYakushi === true) {
+        all[sid].jobType = 'yakushi';
+        updated = true;
+      } else if (all[sid].isYakushi === false) {
+        all[sid].jobType = 'jimu';
+        updated = true;
+      }
     }
   });
   if (updated) localStorage.setItem('salary_all_staff', JSON.stringify(all));
