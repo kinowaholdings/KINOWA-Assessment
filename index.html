@@ -2125,12 +2125,47 @@ function cloudPush(key, value){
   }
 }
 
-// GASへPOST（非同期・投げっぱなし。順序保証はGAS側のLockServiceが担保）
+// GASへPOST。Promiseを返すので、呼び出し側で await すれば完了を待てる。
+// 従来の「投げっぱなし」呼び出し（await しない）も、そのまま非同期実行され互換。
 function __post(sheet, row){
-  fetch(GAS_URL, {
+  return fetch(GAS_URL, {
     method: 'POST',
     body: JSON.stringify({ key: GAS_KEY, sheet: sheet, row: row })
   }).catch(function(e){ console.error('cloudPush失敗', sheet, e); });
+}
+
+// 取り込み専用：全スタッフを1件ずつGASへ保存し、全件の完了を待つ。
+// GAS側はLockServiceで直列化されるため、同時大量POSTでの取りこぼしを避けるべく
+// 少数ずつ（並列上限つき）送って、全部の完了を確認してから解決する。
+async function saveAllStaffAndWait(value, onProgress){
+  let obj = {};
+  try{ obj = JSON.parse(value || '{}'); }catch(e){ return { total:0, done:0 }; }
+  const ids = Object.keys(obj);
+  const total = ids.length;
+  let done = 0;
+  const CONCURRENCY = 4; // 同時POST数。GASのLock競合を避けつつ速度も確保
+  for(let i = 0; i < ids.length; i += CONCURRENCY){
+    const batch = ids.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(function(sid){
+      const d = obj[sid] || {};
+      const row = {
+        staffId: sid,
+        staffName: d.staffName || '',
+        loginId: d.loginId || '',
+        loginPass: d.loginPass || '',
+        store: d.store || '',
+        level: d.level !== undefined ? d.level : '',
+        jobType: d.jobType || (d.isYakushi ? 'yakushi' : ''),
+        dataJSON: JSON.stringify(d),
+        updatedAt: new Date().toISOString()
+      };
+      return __post('staff', row).then(function(){
+        done++;
+        if(onProgress) onProgress(done, total);
+      });
+    }));
+  }
+  return { total: total, done: done };
 }
 
 // ---- localStorage シムを window に強制注入して覆う ----
@@ -3539,7 +3574,7 @@ function importCSV(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
       const text = e.target.result;
       const rows = parseCSV(text);
@@ -3669,9 +3704,25 @@ function importCSV(input) {
         }
       });
 
-      localStorage.setItem('salary_all_staff', JSON.stringify(all));
-      showImportResult('success', added + '名を新規登録、' + updated + '名を更新しました。' + (skipped ? '（' + skipped + '行スキップ）' : ''));
+      // まず __cache とローカル表示用に反映（ここでは cloudPush は走らせない）
+      const staffJson = JSON.stringify(all);
+      __cache['salary_all_staff'] = staffJson;
       refreshData();
+
+      // クラウドへ全件保存し、全部の完了を待ってから成功メッセージを出す。
+      // これを待たずにリロードすると途中で途切れて件数が欠けるため、
+      // 「保存完了」表示が出るまではリロードしないよう明示する。
+      showImportResult('success', '取り込み ' + (added + updated) + ' 名を処理中… クラウド保存中です。完了まで画面を更新しないでください。', true);
+      try {
+        const r = await saveAllStaffAndWait(staffJson, function(done, total){
+          showImportResult('success', 'クラウド保存中… ' + done + ' / ' + total + ' 名（完了までリロードしないでください）', true);
+        });
+        showImportResult('success', '全' + r.done + '名の保存が完了しました。リロードして安全です。'
+          + '（新規' + added + '名 / 更新' + updated + '名' + (skipped ? ' / スキップ' + skipped + '行' : '') + '）', true);
+        refreshData();
+      } catch(saveErr) {
+        showImportResult('error', 'クラウド保存中にエラー：' + saveErr.message + '（一部のみ保存された可能性があります。再度取り込んでください）');
+      }
     } catch(err) {
       showImportResult('error', '読み込みエラー：' + err.message);
     }
@@ -3707,13 +3758,17 @@ function getAllStaffSync() {
   return JSON.parse(localStorage.getItem('salary_all_staff') || '{}');
 }
 
-function showImportResult(type, msg) {
+function showImportResult(type, msg, persist) {
   const banner = document.getElementById('csv-result-banner');
   const isOk = type === 'success';
   banner.innerHTML = '<div class="alert ' + (isOk ? 'alert-success' : 'alert-warning') + '" style="margin-bottom:0;">' +
     (isOk ? '✅ ' : '⚠️ ') + msg + '</div>';
   banner.style.display = 'block';
-  setTimeout(() => { banner.style.display = 'none'; }, 6000);
+  // 進捗・保存中メッセージは自動で消さない（persist=true）。誤って途中で消えるのを防ぐ。
+  if (window.__importBannerTimer) { clearTimeout(window.__importBannerTimer); window.__importBannerTimer = null; }
+  if (!persist) {
+    window.__importBannerTimer = setTimeout(() => { banner.style.display = 'none'; }, 6000);
+  }
 }
 
 function clearFilters() {
