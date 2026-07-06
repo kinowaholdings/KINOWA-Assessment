@@ -3644,6 +3644,10 @@ function importCSV(input) {
           loginId, loginPass,
           store: matchedStore,
           jobType: jobType,
+          // jobType と同時に isYakushi（表示・同期用フラグ）も確定させる。
+          // これを付けないと、後続の同期処理で isYakushi=undefined と判定され
+          // jobType が jimu に戻る汚染ループが起きるため必須。
+          isYakushi: (jobType === 'yakushi'),
           years: yearsIdx,
           level: '0',
           questStatus: 'draft',
@@ -3653,7 +3657,7 @@ function importCSV(input) {
         // 既存スタッフの更新 or 新規作成（メールアドレスで突き合わせ）
         if (existingByEmail[email]) {
           const sid = existingByEmail[email];
-          all[sid] = Object.assign({}, all[sid], { staffName, hireDate, birthDate, lastNameYomi, level: all[sid].level !== undefined ? all[sid].level : '0', store: matchedStore || all[sid].store, jobType: jobType || all[sid].jobType, years: yearsIdx || all[sid].years, loginId: loginId, loginPass: loginPass || all[sid].loginPass });
+          all[sid] = Object.assign({}, all[sid], { staffName, hireDate, birthDate, lastNameYomi, level: all[sid].level !== undefined ? all[sid].level : '0', store: matchedStore || all[sid].store, jobType: jobType || all[sid].jobType, isYakushi: jobType ? (jobType === 'yakushi') : all[sid].isYakushi, years: yearsIdx || all[sid].years, loginId: loginId, loginPass: loginPass || all[sid].loginPass });
           updated++;
         } else {
           // 内部キーはメールのローカル部＋乱数（@はキーに使わない＝エスケープ事故回避）
