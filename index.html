@@ -3565,8 +3565,10 @@ function importCSV(input) {
       const idxDept       = col(['部署', '部署名', '部署1 部署', 'department']);
       const idxHireDate   = col(['入社年月日', '入社日', 'entered_at']);
       const idxBirthDate  = col(['生年月日', 'birth_date', 'birthday']);
-      const idxJobType    = col(['雇用形態', 'employment_type', '職種']);
+      const idxJobType    = col(['雇用形態', 'employment_type']);
       const idxBizUnit    = col(['事業所名', '事業所', 'business_establishment_name']);
+      const idxDuty       = col(['業務内容', 'duty', 'job_category']);   // 薬剤師/調剤事務の判定元
+      const idxRole       = col(['役職1 役職', '役職', 'position', 'role']); // 役員/管理職スキップ判定
 
       let added = 0, updated = 0, skipped = 0;
       const all = getAllStaffSync();
@@ -3592,6 +3594,20 @@ function importCSV(input) {
         const birthDate= idxBirthDate!== -1 ? row[idxBirthDate].trim(): '';
         const bizUnit      = idxBizUnit      !== -1 ? row[idxBizUnit].trim()      : '';
         const lastNameYomi = idxLastNameYomi !== -1 ? row[idxLastNameYomi].trim() : '';
+        const duty         = idxDuty         !== -1 ? (row[idxDuty]||'').trim()   : '';
+        const role         = idxRole         !== -1 ? (row[idxRole]||'').trim()   : '';
+
+        // ── 対象外スキップ：役員・管理職・営業・一般事務 ──
+        // 役職に「取締役」「役員」「管理職」「部長」を含む → スキップ
+        if (/取締役|役員|管理職|部長/.test(role)) { skipped++; return; }
+        // 業務内容が「営業」「一般事務」 → スキップ（薬剤師・調剤事務以外）
+        if (/営業|一般事務/.test(duty)) { skipped++; return; }
+
+        // ── 業務内容 → jobType 変換（薬剤師=yakushi / 調剤事務=jimu）──
+        let jobType = '';
+        if (/薬剤師/.test(duty))      jobType = 'yakushi';
+        else if (/調剤事務/.test(duty)) jobType = 'jimu';
+        // 業務内容が空の行は jobType='' のまま取り込む（後で手動振り分け前提）
 
         // メールアドレス必須：無い行はスキップ
         if (!email || email.indexOf('@') === -1) { skipped++; return; }
@@ -3627,6 +3643,7 @@ function importCSV(input) {
           staffName, hireDate, birthDate, lastNameYomi,
           loginId, loginPass,
           store: matchedStore,
+          jobType: jobType,
           years: yearsIdx,
           level: '0',
           questStatus: 'draft',
@@ -3636,7 +3653,7 @@ function importCSV(input) {
         // 既存スタッフの更新 or 新規作成（メールアドレスで突き合わせ）
         if (existingByEmail[email]) {
           const sid = existingByEmail[email];
-          all[sid] = Object.assign({}, all[sid], { staffName, hireDate, birthDate, lastNameYomi, level: all[sid].level !== undefined ? all[sid].level : '0', store: matchedStore || all[sid].store, years: yearsIdx || all[sid].years, loginId: loginId, loginPass: loginPass || all[sid].loginPass });
+          all[sid] = Object.assign({}, all[sid], { staffName, hireDate, birthDate, lastNameYomi, level: all[sid].level !== undefined ? all[sid].level : '0', store: matchedStore || all[sid].store, jobType: jobType || all[sid].jobType, years: yearsIdx || all[sid].years, loginId: loginId, loginPass: loginPass || all[sid].loginPass });
           updated++;
         } else {
           // 内部キーはメールのローカル部＋乱数（@はキーに使わない＝エスケープ事故回避）
