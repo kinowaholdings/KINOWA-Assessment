@@ -5715,6 +5715,12 @@ function submitNextPeriod() {
   }
   state.nextQuestStatus = 'submitted';
   state.nextSubmittedAt = new Date().toISOString();
+  // 次期目標を提出したので、強制Step4開始フラグを解除する（以後は通常のサマリー着地に戻る）。
+  state.forceStep4 = false;
+  try {
+    var _all = JSON.parse(localStorage.getItem('salary_all_staff') || '{}');
+    if (_all[state.staffId]) { delete _all[state.staffId].forceStep4; localStorage.setItem('salary_all_staff', JSON.stringify(_all)); }
+  } catch(e) {}
   saveToStorage();
   refreshQuestStatus();
   renderGoalCatalog();
@@ -6317,6 +6323,15 @@ function initApp() {
   // state.staffId はログイン時に設定済み
   // 旧360評価UIは新フル版(eval360_*)に置き換えたため、ここでの描画呼び出しは不要
   loadFromStorage();
+  // 運用開始設定で初期化されたスタッフは、強制的にStep4（次期目標設定）から開始する。
+  try {
+    var _all = JSON.parse(localStorage.getItem('salary_all_staff') || '{}');
+    var _me  = _all[state.staffId];
+    if (_me && _me.forceStep4) {
+      var _questNav = document.querySelector("#staff-app .nav-item[onclick*=\"s-quest\"]");
+      nav(_questNav, 's-quest');
+    }
+  } catch(e) { /* 初期表示の失敗はサマリー着地にフォールバック */ }
   // 上長からの更新を定期チェック（5秒ごと）
   renderStaffHistory();
   setInterval(checkFeedback, 5000);
@@ -6694,6 +6709,9 @@ function onboardResetStaff(d) {
   d.nextQuests = {};
   d.nextManagerComment = '';
   d.onboardedAt = new Date().toISOString();
+  // 初期化直後はログイン時に強制的にStep4（次期目標設定）から開始させる。
+  // 次期目標を提出した時点でこのフラグは解除する（提出前ならログアウトしても再びStep4に戻る）。
+  d.forceStep4 = true;
   return d;
 }
 
