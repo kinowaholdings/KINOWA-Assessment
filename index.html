@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-06-B</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-06-C</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -7848,10 +7848,22 @@ function updateEvalTargetBanner() {
   var all  = JSON.parse(localStorage.getItem('salary_all_staff') || '{}');
   var d    = all[sid];
   var isTarget = !d || d.evalTarget !== false;
+  var forceStep4 = !!(d && d.forceStep4); // 運用開始設定で初期化直後：Step4のみ開放
+
   var banner = document.getElementById('not-eval-target-banner');
-  if (banner) banner.style.display = isTarget ? 'none' : 'flex';
+  if (banner) banner.style.display = (isTarget && !forceStep4) ? 'none' : 'flex';
+
   document.querySelectorAll('#staff-app .nav-item').forEach(function(el) {
     var t = el.textContent || '';
+    // 初期化直後（forceStep4）は、Step4「次期目標設定」以外（Step1〜3）をすべて無効化する。
+    // 次期目標を提出するとフラグが外れ、通常の制御に戻る。
+    if (forceStep4) {
+      var isStep4 = (t.indexOf('次期目標') >= 0 || t.indexOf('行動目標') >= 0);
+      el.style.opacity       = isStep4 ? '' : '0.35';
+      el.style.pointerEvents = isStep4 ? '' : 'none';
+      el.title               = isStep4 ? '' : 'まず次期目標設定（Step4）を提出してください';
+      return;
+    }
     // 目標設定（行動目標）は審査対象外でも入力可とする（入職直後でも目標設定させるため）
     // 360度評価のみ、今期の被評価対象でない場合は無効化する
     if (t.indexOf('360度評価') >= 0) {
