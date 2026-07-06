@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-06-D</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-E-差分同期</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2032,6 +2032,9 @@ const CLOUD_KEY_TO_SHEET = {
 // メモリキャッシュ（起動時にGASから読み込む）
 const __cache = {};
 let __cloudReady = false;
+// staff保存の送信モード。通常は差分送信（変更された人だけ）。
+// 取り込み等で全員を確実に送りたい時だけ true にする。
+let __forceFullStaffSync = false;
 // 生のlocalStorage（クラウド管理外キー専用フォールバック）。
 // var localStorage の巻き上げに影響されぬよう window. を明示して取得。
 const __realLS = window['localStorage'];
@@ -2092,28 +2095,35 @@ async function cloudLoadAll(){
 }
 
 // ---- 変更をGASへ書き戻す（キー種別ごとに適切なタブへ）----
+// スタッフ1人分を staff シートへ送る（差分送信・全件送信の共通処理）
+function cloudPushOneStaff(sid, d){
+  d = d || {};
+  const row = {
+    staffId: sid,
+    staffName: d.staffName || '',
+    loginId: d.loginId || '',
+    loginPass: d.loginPass || '',
+    store: d.store || '',
+    level: d.level !== undefined ? d.level : '',
+    jobType: d.jobType || (d.isYakushi ? 'yakushi' : ''),
+    dataJSON: JSON.stringify(d),
+    updatedAt: new Date().toISOString()
+  };
+  __post('staff', row);
+}
+
 function cloudPush(key, value){
   const sheet = CLOUD_KEY_TO_SHEET[key];
   if(!sheet || sheet === '__local__') return;   // ローカルのみのキーは送らない
 
   if(sheet === 'staff'){
-    // 全スタッフオブジェクト → 差分行だけを個別にupsert
     let obj = {};
     try{ obj = JSON.parse(value || '{}'); }catch(e){ return; }
+    // ここは全件送信（取り込み時など __forceFullStaffSync=true の一括保存用）。
+    // 通常の1人保存は setItem シム側で差分判定し cloudPushOneStaff を使うため、
+    // このループが走るのは意図的な全件同期のときだけ。
     Object.keys(obj).forEach(function(sid){
-      const d = obj[sid] || {};
-      const row = {
-        staffId: sid,
-        staffName: d.staffName || '',
-        loginId: d.loginId || '',
-        loginPass: d.loginPass || '',
-        store: d.store || '',
-        level: d.level !== undefined ? d.level : '',
-        jobType: d.jobType || (d.isYakushi ? 'yakushi' : ''),
-        dataJSON: JSON.stringify(d),
-        updatedAt: new Date().toISOString()
-      };
-      __post('staff', row);
+      cloudPushOneStaff(sid, obj[sid]);
     });
   } else if(sheet === 'settings'){
     __post('settings', { key: key, valueJSON: value });
@@ -2147,27 +2157,26 @@ async function saveAllStaffAndWait(value, onProgress){
   const ids = Object.keys(obj);
   const total = ids.length;
   let done = 0;
-  const CONCURRENCY = 4; // 同時POST数。GASのLock競合を避けつつ速度も確保
-  for(let i = 0; i < ids.length; i += CONCURRENCY){
-    const batch = ids.slice(i, i + CONCURRENCY);
-    await Promise.all(batch.map(function(sid){
-      const d = obj[sid] || {};
-      const row = {
-        staffId: sid,
-        staffName: d.staffName || '',
-        loginId: d.loginId || '',
-        loginPass: d.loginPass || '',
-        store: d.store || '',
-        level: d.level !== undefined ? d.level : '',
-        jobType: d.jobType || (d.isYakushi ? 'yakushi' : ''),
-        dataJSON: JSON.stringify(d),
-        updatedAt: new Date().toISOString()
-      };
-      return __post('staff', row).then(function(){
-        done++;
-        if(onProgress) onProgress(done, total);
-      });
-    }));
+  // 1件ずつ直列で送る。並列にすると GAS の LockService が競合してタイムアウト失敗するため、
+  // 前の1件が終わってから次を送り、各件の間に短い間隔を入れてロックが確実に空くようにする。
+  for(let i = 0; i < ids.length; i++){
+    const sid = ids[i];
+    const d = obj[sid] || {};
+    const row = {
+      staffId: sid,
+      staffName: d.staffName || '',
+      loginId: d.loginId || '',
+      loginPass: d.loginPass || '',
+      store: d.store || '',
+      level: d.level !== undefined ? d.level : '',
+      jobType: d.jobType || (d.isYakushi ? 'yakushi' : ''),
+      dataJSON: JSON.stringify(d),
+      updatedAt: new Date().toISOString()
+    };
+    await __post('staff', row);
+    done++;
+    if(onProgress) onProgress(done, total);
+    await new Promise(function(r){ setTimeout(r, 120); }); // ロック解放の間隔
   }
   return { total: total, done: done };
 }
@@ -2190,8 +2199,24 @@ var __LS_SHIM = {
   },
   setItem: function(k, v){
     if(k in CLOUD_KEY_TO_SHEET && CLOUD_KEY_TO_SHEET[k] !== '__local__'){
+      // staff は差分送信：前回キャッシュと比較し、実際に変わった人だけを送る。
+      // これにより「1人の保存で全95人を送る」大量POSTを防ぐ（GAS詰まりの根本対策）。
+      // 取り込み等で全件送信したい時だけ __forceFullStaffSync = true にして呼ぶ。
+      if(k === 'salary_all_staff' && __cloudReady && !__forceFullStaffSync){
+        try {
+          const prev = JSON.parse(__cache[k] || '{}');
+          const next = JSON.parse(v || '{}');
+          const changed = [];
+          Object.keys(next).forEach(function(sid){
+            if(JSON.stringify(prev[sid]) !== JSON.stringify(next[sid])) changed.push(sid);
+          });
+          __cache[k] = v;
+          changed.forEach(function(sid){ cloudPushOneStaff(sid, next[sid]); });
+          return;
+        } catch(e) { /* パース失敗時は従来動作にフォールバック */ }
+      }
       __cache[k] = v;
-      if(__cloudReady) cloudPush(k, v);   // 起動ロード完了後のみ送信
+      if(__cloudReady) cloudPush(k, v);   // 起動ロード完了後のみ送信（取り込み時の全件送信を含む）
       return;
     }
     __realLS.setItem(k, v);
