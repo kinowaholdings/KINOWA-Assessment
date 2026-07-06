@@ -2132,12 +2132,14 @@ function __post(sheet, row){
   }).catch(function(e){ console.error('cloudPush失敗', sheet, e); });
 }
 
-// ---- localStorage をローカル変数シムで覆う ----
-// 【重要】window.localStorage への代入は多くのブラウザで読み取り専用のため無視される。
-// そのため window ではなく、この <script> 内でのみ有効な「localStorage」という
-// ローカル変数を宣言してシムに差し替える（巻き上げにより本ブロック全体で有効）。
-// これにより本文中の localStorage.getItem / setItem は必ずこのシムを呼ぶ。
-var localStorage = {
+// ---- localStorage シムを window に強制注入して覆う ----
+// 【方針】ローカル変数(var localStorage)方式は、この<script>内では効くが、
+// 別のIIFE/クロージャ（例:360度評価フル版）の中の関数までは覆えず、そこが
+// 生のwindow.localStorageを読んでしまう。単純代入(window.localStorage=…)は
+// 読み取り専用プロパティのため無視される。よって Object.defineProperty で
+// window.localStorage 自体を強制的に置き換える。これで内外すべてのコードが
+// 必ずこのシムを通る。
+var __LS_SHIM = {
   getItem: function(k){
     // クラウド管理キーは __cache のみを唯一の真実とする（古い生localStorageは一切見ない）
     if(k in CLOUD_KEY_TO_SHEET && CLOUD_KEY_TO_SHEET[k] !== '__local__'){
@@ -2165,6 +2167,19 @@ var localStorage = {
   key: function(){ return null; },
   get length(){ return Object.keys(__cache).length; }
 };
+
+// window.localStorage を強制上書き（代入不可プロパティでも defineProperty なら効く）
+try {
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    get: function(){ return __LS_SHIM; }
+  });
+} catch(e) {
+  // 万一 defineProperty も弾かれた環境向けの保険
+  try { window.localStorage = __LS_SHIM; } catch(e2){}
+}
+// この<script>内で localStorage と裸で書かれた箇所もシムを指すようにする
+var localStorage = __LS_SHIM;
 
 // ===== CONFIG =====
 const MANAGER_PASSWORD = ''; // パスワードは authシート で管理（ベタ書き廃止）
