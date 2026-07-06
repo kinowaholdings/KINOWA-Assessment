@@ -2031,7 +2031,9 @@ const CLOUD_KEY_TO_SHEET = {
 // メモリキャッシュ（起動時にGASから読み込む）
 const __cache = {};
 let __cloudReady = false;
-const __realLS = window.localStorage;   // 生のlocalStorage（フォールバック用）
+// 生のlocalStorage（クラウド管理外キー専用フォールバック）。
+// var localStorage の巻き上げに影響されぬよう window. を明示して取得。
+const __realLS = window['localStorage'];
 
 // ---- GASから全データを読み、キャッシュに載せる（起動時1回）----
 async function cloudLoadAll(){
@@ -2071,6 +2073,15 @@ async function cloudLoadAll(){
   const hist = {};
   (data.history||[]).forEach(function(row){ if(row.id) hist[row.id] = row; });
   __cache['salary_raise_history'] = JSON.stringify(hist);
+
+  // 【残骸一掃】クラウド化前に生localStorageへ残った旧データを完全削除する。
+  // これをしないと、シムを介さない箇所やデバッグ確認で古い40名データが復活して見える。
+  // 消すのはこのブラウザ内の旧コピーのみ。GAS/スプレッドシート側の本物には一切触れない。
+  Object.keys(CLOUD_KEY_TO_SHEET).forEach(function(k){
+    if(CLOUD_KEY_TO_SHEET[k] !== '__local__'){
+      try{ __realLS.removeItem(k); }catch(e){}
+    }
+  });
 
   __cloudReady = true;
 }
@@ -2121,27 +2132,38 @@ function __post(sheet, row){
   }).catch(function(e){ console.error('cloudPush失敗', sheet, e); });
 }
 
-// ---- localStorage を乗っ取り、キャッシュ＋クラウド同期に差し替える ----
-window.localStorage = {
+// ---- localStorage をローカル変数シムで覆う ----
+// 【重要】window.localStorage への代入は多くのブラウザで読み取り専用のため無視される。
+// そのため window ではなく、この <script> 内でのみ有効な「localStorage」という
+// ローカル変数を宣言してシムに差し替える（巻き上げにより本ブロック全体で有効）。
+// これにより本文中の localStorage.getItem / setItem は必ずこのシムを呼ぶ。
+var localStorage = {
   getItem: function(k){
-    if(k in __cache) return __cache[k];
-    // クラウド管理外のキーは生localStorageへ
-    if(CLOUD_KEY_TO_SHEET[k] === '__local__' || !(k in CLOUD_KEY_TO_SHEET)){
-      return __realLS.getItem(k);
+    // クラウド管理キーは __cache のみを唯一の真実とする（古い生localStorageは一切見ない）
+    if(k in CLOUD_KEY_TO_SHEET && CLOUD_KEY_TO_SHEET[k] !== '__local__'){
+      return (k in __cache) ? __cache[k] : null;
     }
-    return null;
+    // クラウド管理外のキー（一時ID等）だけ生localStorageを使う
+    return __realLS.getItem(k);
   },
   setItem: function(k, v){
-    if(CLOUD_KEY_TO_SHEET[k] === '__local__' || !(k in CLOUD_KEY_TO_SHEET)){
-      __realLS.setItem(k, v); return;
+    if(k in CLOUD_KEY_TO_SHEET && CLOUD_KEY_TO_SHEET[k] !== '__local__'){
+      __cache[k] = v;
+      if(__cloudReady) cloudPush(k, v);   // 起動ロード完了後のみ送信
+      return;
     }
-    __cache[k] = v;
-    if(__cloudReady) cloudPush(k, v);   // 起動ロード完了後のみ送信
+    __realLS.setItem(k, v);
   },
   removeItem: function(k){
-    delete __cache[k];
+    if(k in CLOUD_KEY_TO_SHEET && CLOUD_KEY_TO_SHEET[k] !== '__local__'){
+      delete __cache[k];
+      return;
+    }
     __realLS.removeItem(k);
-  }
+  },
+  clear: function(){ /* クラウド管理データは消さない（誤操作防止） */ },
+  key: function(){ return null; },
+  get length(){ return Object.keys(__cache).length; }
 };
 
 // ===== CONFIG =====
