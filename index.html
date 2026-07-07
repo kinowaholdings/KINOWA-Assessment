@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-F-goals同期</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-G-承認済みタブ</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -910,10 +910,22 @@ tr.expanded td{background:var(--light-blue) !important;}
   </div>
   <div class="sidebar-section">
     <div class="sidebar-label">参照</div>
+    <div class="nav-item" onclick="nav(this,'approved-goals')"><span class="nav-icon">✅</span>承認済み目標</div>
   </div>
 </div>
 
 <div class="main">
+
+<!-- 承認済み目標（次期・全スタッフ） -->
+<div class="page" id="page-approved-goals">
+  <div style="margin-bottom:16px;">
+    <h2 style="font-size:22px;font-weight:900;color:var(--navy);">✅ 承認済み目標（次期）</h2>
+    <p style="font-size:13px;color:var(--gray-500);margin-top:4px;">上長が承認した次期目標の一覧です。スタッフ名・店舗で絞り込めます。</p>
+  </div>
+  <input id="approved-search" type="text" placeholder="🔍 スタッフ名・店舗で絞り込み" oninput="renderApprovedGoals()"
+    style="width:100%;max-width:360px;padding:10px 14px;border:1px solid var(--gray-300);border-radius:8px;font-size:14px;margin-bottom:16px;">
+  <div id="approved-goals-list"></div>
+</div>
 
 <!-- DASHBOARD -->
 <div class="page active" id="page-dashboard">
@@ -1461,11 +1473,21 @@ tr.expanded td{background:var(--light-blue) !important;}
   </div>
   <div class="sidebar-section">
     <div class="sidebar-label">参照</div>
+    <div class="nav-item" onclick="nav(this,'s-approved-goals')"><span class="nav-icon">✅</span>承認済み目標</div>
     <div class="nav-item" onclick="nav(this,'s-history')"><span class="nav-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>昇給履歴</div>
   </div>
 </div>
 
 <div class="main">
+
+<!-- 承認済み目標（自分・次期） -->
+<div class="page" id="page-s-approved-goals">
+  <div style="margin-bottom:16px;">
+    <h2 style="font-size:22px;font-weight:900;color:var(--navy);">✅ 承認済み目標（次期）</h2>
+    <p style="font-size:13px;color:var(--gray-500);margin-top:4px;">上長に承認された、あなたの次期目標です。</p>
+  </div>
+  <div id="s-approved-goals-list"></div>
+</div>
 
 <!-- DASHBOARD -->
 <div class="page active" id="page-s-dashboard">
@@ -3344,8 +3366,63 @@ function renderPendingCardNext(id, d) {
   </div>`;
 }
 
-// ===== 次期目標予告セクション =====
-// 変更履歴ヘルパー：カタログ原本(orig*)と現在値の差分を検出して表示用HTMLを返す。
+// ===== 承認済み目標タブ（次期・approvedのみ）=====
+// データはローカルの salary_all_staff から読む（通信ゼロ・全デバイス同期は既存基盤で保証）。
+function approvedGoalCardHtml(q){
+  function esc(s){ return (s||'').replace(/</g,'&lt;'); }
+  var rRows = (q.results||[]).map(function(r){ return '<div style="font-size:12px;color:var(--gray-700);padding:2px 0;">・' + esc(r) + '</div>'; }).join('');
+  var aRows = (q.actions||[]).map(function(a){ return '<div style="font-size:12px;color:var(--gray-700);padding:2px 0;">・' + esc(a) + '</div>'; }).join('');
+  return '<div style="border:1px solid var(--gray-200);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:#fff;">'
+    + '<div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:4px;">' + esc(q.title) + ' <span style="font-size:12px;color:#f59e0b;">' + (q.level||'') + '</span> ' + (typeof customGoalBadge==='function'?customGoalBadge(q):'') + '</div>'
+    + '<div style="font-size:10px;color:var(--gray-500);font-weight:700;margin:4px 0 2px;">🎯 結果目標</div>' + rRows
+    + '<div style="font-size:10px;color:var(--gray-500);font-weight:700;margin:6px 0 2px;">📋 行動目標</div>' + aRows
+    + (typeof questChangeSummary==='function'?questChangeSummary(q):'')
+    + '</div>';
+}
+
+// manager用：全スタッフの承認済み次期目標
+function renderApprovedGoals(){
+  var box = document.getElementById('approved-goals-list');
+  if(!box) return;
+  var kw = (document.getElementById('approved-search')||{}).value || '';
+  kw = kw.trim().toLowerCase();
+  var all = JSON.parse(localStorage.getItem('salary_all_staff')||'{}');
+  var html = '';
+  var count = 0;
+  Object.keys(all).forEach(function(sid){
+    var d = all[sid];
+    if(!d || d.nextQuestStatus !== 'approved') return;
+    var name = (d.staffName||''), store = (d.store||'');
+    if(kw && (name.toLowerCase().indexOf(kw) < 0 && store.toLowerCase().indexOf(kw) < 0)) return;
+    var ids = d.nextSelectedGoalIds || [];
+    var quests = d.nextQuests || {};
+    var cards = ids.map(function(gid){ return quests[gid] ? approvedGoalCardHtml(quests[gid]) : ''; }).join('');
+    if(!cards) return;
+    count++;
+    html += '<div style="margin-bottom:18px;">'
+      + '<div style="font-weight:800;font-size:15px;color:var(--gray-900);margin-bottom:8px;border-left:4px solid var(--teal);padding-left:8px;">'
+      + (name||'（氏名未設定）') + ' <span style="font-size:12px;color:var(--gray-500);font-weight:600;">' + store + '</span></div>'
+      + cards + '</div>';
+  });
+  box.innerHTML = count ? html : '<div style="color:var(--gray-500);padding:20px;text-align:center;">承認済みの次期目標はまだありません。</div>';
+}
+
+// staff用：自分の承認済み次期目標
+function renderMyApprovedGoals(){
+  var box = document.getElementById('s-approved-goals-list');
+  if(!box) return;
+  var all = JSON.parse(localStorage.getItem('salary_all_staff')||'{}');
+  var d = all[state.staffId];
+  if(!d || d.nextQuestStatus !== 'approved'){
+    box.innerHTML = '<div style="color:var(--gray-500);padding:20px;text-align:center;">まだ承認済みの次期目標はありません。上長の承認をお待ちください。</div>';
+    return;
+  }
+  var ids = d.nextSelectedGoalIds || [];
+  var quests = d.nextQuests || {};
+  var cards = ids.map(function(gid){ return quests[gid] ? approvedGoalCardHtml(quests[gid]) : ''; }).join('');
+  box.innerHTML = cards || '<div style="color:var(--gray-500);padding:20px;text-align:center;">承認済みの目標が見つかりません。</div>';
+}
+
 // custom(自由記述)目標は原本が無いため差分対象外。
 function questChangeSummary(q) {
   if (!q || q.custom) return '';
@@ -6437,6 +6514,8 @@ function showToast(msg) {
 function nav(el, pageId) {
   if (pageId === 's-achievement') { refreshQuestStatus(); renderAchievementForms(); }
   if (pageId === 's-skillmap')    { renderSkillMap(); }
+  if (pageId === 'approved-goals')   { renderApprovedGoals(); }
+  if (pageId === 's-approved-goals') { renderMyApprovedGoals(); }
   if (pageId === 's-quest')       {
     ensureQuestArrays();
     // 初期タブ：今期がapprovedかつ進行中、または何も無い場合は「次期」を、
