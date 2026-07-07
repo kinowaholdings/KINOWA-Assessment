@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-G-承認済みタブ</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-H-差し戻し再申請</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -3366,6 +3366,20 @@ function renderPendingCardNext(id, d) {
   </div>`;
 }
 
+// 承認済みの次期目標を差し戻す（→ rejected にして、スタッフが修正・再申請できる状態に戻す）
+function returnApprovedGoal(sid){
+  var all = JSON.parse(localStorage.getItem('salary_all_staff')||'{}');
+  var d = all[sid];
+  if(!d){ showToast('対象が見つかりません'); return; }
+  var name = d.staffName || 'このスタッフ';
+  var reason = prompt(name + 'さんの承認済み次期目標を差し戻します。\n差し戻し理由（スタッフに表示されます・任意）を入力してください：', '');
+  if(reason === null) return; // キャンセル
+  // 既存の承認/差戻しロジックを再利用（approved → rejected）
+  applyAction(sid, 'rejected', reason || '承認済み目標の再検討をお願いします', 'next');
+  showToast('↩ ' + name + 'さんの目標を差し戻しました');
+  renderApprovedGoals(); // 一覧から外れる（approvedでなくなるため）
+}
+
 // ===== 承認済み目標タブ（次期・approvedのみ）=====
 // データはローカルの salary_all_staff から読む（通信ゼロ・全デバイス同期は既存基盤で保証）。
 function approvedGoalCardHtml(q){
@@ -3400,8 +3414,10 @@ function renderApprovedGoals(){
     if(!cards) return;
     count++;
     html += '<div style="margin-bottom:18px;">'
-      + '<div style="font-weight:800;font-size:15px;color:var(--gray-900);margin-bottom:8px;border-left:4px solid var(--teal);padding-left:8px;">'
-      + (name||'（氏名未設定）') + ' <span style="font-size:12px;color:var(--gray-500);font-weight:600;">' + store + '</span></div>'
+      + '<div style="font-weight:800;font-size:15px;color:var(--gray-900);margin-bottom:8px;border-left:4px solid var(--teal);padding-left:8px;display:flex;justify-content:space-between;align-items:center;">'
+      + '<span>' + (name||'（氏名未設定）') + ' <span style="font-size:12px;color:var(--gray-500);font-weight:600;">' + store + '</span></span>'
+      + '<button class="btn btn-outline btn-sm" style="font-size:12px;color:var(--red);border-color:var(--red);" onclick="returnApprovedGoal(\'' + sid + '\')">↩ 差し戻して再申請させる</button>'
+      + '</div>'
       + cards + '</div>';
   });
   box.innerHTML = count ? html : '<div style="color:var(--gray-500);padding:20px;text-align:center;">承認済みの次期目標はまだありません。</div>';
