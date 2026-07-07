@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-I-店舗プルダウン修正</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-J-提出承認の確実同期</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -4650,6 +4650,12 @@ function applyAction(staffId, newStatus, comment, target) {
     d.nextQuestStatus = newStatus;
     d.nextManagerComment = comment || '';
     localStorage.setItem('salary_all_staff', JSON.stringify(all));
+    // 承認・差し戻しも状態遷移のため、差分同期のスキップを避けて確実にクラウドへ送る。
+    try {
+      if (typeof cloudPushOneStaff === 'function' && typeof __cloudReady !== 'undefined' && __cloudReady) {
+        cloudPushOneStaff(staffId, d);
+      }
+    } catch(e) {}
     const msg = newStatus === 'approved'  ? '✅ 次期目標を承認しました'
               : newStatus === 'rejected' ? '❌ 次期目標を差し戻しました'
               : '更新しました';
@@ -5891,11 +5897,21 @@ function submitNextPeriod() {
   state.nextSubmittedAt = new Date().toISOString();
   // 次期目標を提出したので、強制Step4開始フラグを解除する（以後は通常のサマリー着地に戻る）。
   state.forceStep4 = false;
+  // まず完全な状態を保存（nextQuestStatus=submitted を含む）
+  saveToStorage();
+  // forceStep4 を確実に除去し、その最終データをクラウドへ「確実送信」する。
+  // 差分同期は状態遷移（draft→submitted）が絡むと送信をスキップすることがあるため、
+  // 提出という重要イベントでは cloudPushOneStaff で明示的に1回送り、取りこぼしを防ぐ。
   try {
     var _all = JSON.parse(localStorage.getItem('salary_all_staff') || '{}');
-    if (_all[state.staffId]) { delete _all[state.staffId].forceStep4; localStorage.setItem('salary_all_staff', JSON.stringify(_all)); }
+    var _me = _all[state.staffId];
+    if (_me) {
+      if (_me.forceStep4) { delete _me.forceStep4; localStorage.setItem('salary_all_staff', JSON.stringify(_all)); }
+      if (typeof cloudPushOneStaff === 'function' && typeof __cloudReady !== 'undefined' && __cloudReady) {
+        cloudPushOneStaff(state.staffId, _me);
+      }
+    }
   } catch(e) {}
-  saveToStorage();
   refreshQuestStatus();
   renderGoalCatalog();
   renderQuestForms();
