@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-H-差し戻し再申請</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-I-店舗プルダウン修正</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2304,6 +2304,9 @@ Object.defineProperty(globalThis, 'PITCH', {
   configurable: true
 });
 const LV_LABELS = ['Lv.1','Lv.2','Lv.3','Lv.4'];
+// 店舗マスタ（単一の情報源）。所属店舗プルダウン等はすべてここを参照する。
+// 店舗の増減はこの配列を編集するだけで全画面に反映される。
+const STORES = ['お茶の木薬局','くりの木薬局','ケアの木薬局','さくらの木薬局','サン薬局','そらの木薬局','にじの木薬局','はれの木薬局','ほしの木薬局','ゆずの木薬局'];
 // カテゴリ（職種共通ID・表示は職種別に切り替え）
 // ===== カテゴリ定義（6カテゴリ版）=====
 const CATS_YAKUSHI = [
