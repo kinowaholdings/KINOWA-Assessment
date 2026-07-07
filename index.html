@@ -765,7 +765,7 @@ tr.expanded td{background:var(--light-blue) !important;}
 </style>
 </head>
 <body>
-<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-E-差分同期</div>
+<div id="build-version-badge" style="position:fixed;bottom:6px;right:8px;z-index:99999;font-size:10px;color:#9aa0a6;background:rgba(255,255,255,0.85);padding:2px 7px;border-radius:8px;font-family:monospace;pointer-events:none;">build 2026-07-07-F-goals同期</div>
 <div id="select-screen" class="login-screen" style="display:none;">
   <div style="text-align:center;">
     <div style="width:80px;height:80px;margin:0 auto 20px;filter:drop-shadow(0 8px 24px rgba(26,181,176,0.35));"><svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2141,10 +2141,12 @@ function cloudPush(key, value){
 
 // GASへPOST。Promiseを返すので、呼び出し側で await すれば完了を待てる。
 // 従来の「投げっぱなし」呼び出し（await しない）も、そのまま非同期実行され互換。
-function __post(sheet, row){
+function __post(sheet, row, opts){
+  const payload = { key: GAS_KEY, sheet: sheet, row: row };
+  if(opts && opts.skipGoals) payload.skipGoals = true;
   return fetch(GAS_URL, {
     method: 'POST',
-    body: JSON.stringify({ key: GAS_KEY, sheet: sheet, row: row })
+    body: JSON.stringify(payload)
   }).catch(function(e){ console.error('cloudPush失敗', sheet, e); });
 }
 
@@ -2173,7 +2175,7 @@ async function saveAllStaffAndWait(value, onProgress){
       dataJSON: JSON.stringify(d),
       updatedAt: new Date().toISOString()
     };
-    await __post('staff', row);
+    await __post('staff', row, { skipGoals: true });
     done++;
     if(onProgress) onProgress(done, total);
     await new Promise(function(r){ setTimeout(r, 120); }); // ロック解放の間隔
